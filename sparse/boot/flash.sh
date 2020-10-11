@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Contact: Matti Kosola <matti.kosola@jollamobile.com>
 #
@@ -47,6 +47,9 @@ UNAME=$(uname)
 
 OS_VERSION=
 
+FASTBOOT_BIN_PATH=
+FASTBOOT_BIN_NAME=
+
 case $UNAME in
   Linux)
     echo "Detected Linux"
@@ -56,14 +59,15 @@ case $UNAME in
     OS_VERSION=$major-$minor
     echo "Detected Mac OS X - Version: $OS_VERSION"
     ;;
+  FreeBSD)
+    FASTBOOT_BIN_PATH="/usr/local/bin/"
+    echo "Detected FreeBSD"
+    ;;
   *)
     echo "Failed to detect operating system!"
     exit 1
     ;;
 esac
-
-FASTBOOT_BIN_PATH=
-FASTBOOT_BIN_NAME=
 
 if ! check_fastboot "fastboot-$UNAME-$OS_VERSION" ; then
   if ! check_fastboot "fastboot-$UNAME"; then
@@ -75,6 +79,7 @@ if ! check_fastboot "fastboot-$UNAME-$OS_VERSION" ; then
       echo "    Debian/Ubuntu/.deb distros:  apt-get install android-tools-fastboot"
       echo "    Fedora:  yum install android-tools"
       echo "    OS X:    brew install android-sdk"
+      echo "    FreeBSD: pkg install android-tools-fastboot"
       echo ""
       exit 1
     else
@@ -98,6 +103,10 @@ SERIALNUMBERS=
 count=0
 for SERIALNO in $FASTBOOT_DEVICES; do
   PRODUCT=$($FASTBOOTCMD_NO_DEVICE -s $SERIALNO getvar product 2>&1 | head -n1 | cut -d ' ' -f2)
+  BASEBAND=$($FASTBOOTCMD_NO_DEVICE -s $SERIALNO getvar version-baseband 2>&1 | head -n1 | cut -d ' ' -f2)
+  BOOTLOADER=$($FASTBOOTCMD_NO_DEVICE -s $SERIALNO getvar version-bootloader 2>&1 | head -n1 | cut -d ' ' -f2)
+
+  echo "Found $PRODUCT, baseband:$BASEBAND, bootloader:$BOOTLOADER"
 
   if [ ! -z "$(echo $PRODUCT | grep @DEVICES@)" ]; then
     SERIALNUMBERS="$SERIALNO $SERIALNUMBERS"
@@ -126,10 +135,6 @@ if [ "$($FASTBOOTCMD getvar secure 2>&1 | head -n1 | cut -d ' ' -f2 )" == "yes" 
   exit 1;
 fi
 
-if [ -z ${BINARY_PATH} ]; then
-  BINARY_PATH=./
-fi
-
 if [ -z ${SAILFISH_IMAGE_PATH} ]; then
   SAILFISH_IMAGE_PATH=./
 fi
@@ -143,8 +148,8 @@ IMAGES=(
 "vendor_b ${SAILFISH_IMAGE_PATH}vendor.img001"
 )
 
-if [ "$UNAME" = "Darwin" ]; then
-  # macOS doesn't have md5sum so lets use md5 there.
+if [ "$UNAME" = "Darwin" ] || [ "$UNAME" = "FreeBSD" ]; then
+  # macOS and FreeBSD don't have md5sum so lets use md5 there.
   while read -r line; do
     md5=$(echo $line | awk '{ print $1 }')
     filename=$(echo $line | awk '{ print $2 }')
@@ -174,7 +179,7 @@ for IMAGE in "${IMAGES[@]}"; do
 done
 
 if [ -z ${BLOB_BIN_PATH} ]; then
-  BLOB_BIN_PATH=./
+  BLOB_BIN_PATH=.
 fi
 
 BLOBS=""
@@ -207,7 +212,7 @@ for IMAGE in "${IMAGES[@]}"; do
   $FLASHCMD $partition $ifile
 done
 
-echo "Flashing oem partition.."
+echo "Flashing $BLOBS to oem partition.."
 $FLASHCMD oem_a $BLOBS
 
 echo "Flashing vbmeta partition..."
